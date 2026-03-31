@@ -13,7 +13,7 @@ import {
   ReferenceLine,
   ReferenceArea,
 } from "recharts";
-
+ 
 // ─── Historical UVA/USD ratio (BCRA, 2003–2026) ───────────────────────────
 const HIST = [
   { f: "2003", r: 0.40 }, { f: "2004", r: 0.46 }, { f: "2005", r: 0.50 },
@@ -29,32 +29,33 @@ const HIST = [
   { f: "2024 H1", r: 0.92 }, { f: "2024 H2", r: 1.09 }, { f: "2025 H1", r: 1.15 },
   { f: "2025 H2", r: 1.31 }, { f: "2026", r: 1.33, current: true },
 ];
-
+ 
 const PROM_HIST = (HIST.reduce((s, d) => s + d.r, 0) / HIST.length).toFixed(2);
-
+ 
 const getRatioStatus = (r) => {
   if (r >= 1.20) return { level: "excelente", label: "Momento excelente para tomar crédito", color: "#16a34a", bg: "#f0fdf4", border: "#86efac", icon: "⭐" };
   if (r >= 0.95) return { level: "bueno", label: "Buen momento para tomar crédito", color: "#0891b2", bg: "#ecfeff", border: "#67e8f9", icon: "✅" };
   if (r >= 0.70) return { level: "neutro", label: "Momento neutro — analizar caso a caso", color: "#d97706", bg: "#fffbeb", border: "#fcd34d", icon: "⚠️" };
   return { level: "desfavorable", label: "Momento desfavorable — dólar caro en UVAs", color: "#dc2626", bg: "#fef2f2", border: "#fca5a5", icon: "🔴" };
 };
-
+ 
 const fmt = (n, dec = 0) =>
   new Intl.NumberFormat("es-AR", { maximumFractionDigits: dec }).format(n);
-
+ 
 const cuotaX100k = (tna, anios) => {
   if (tna === 0) return 100000 / (anios * 12);
   const i = tna / 100 / 12;
   const n = anios * 12;
   return (100000 * i * Math.pow(1 + i, n)) / (Math.pow(1 + i, n) - 1);
 };
-
+ 
 const SORT_OPTIONS = [
   { key: "tna", label: "📉 Menor tasa" },
+  { key: "cuota_ingreso", label: "🏠 Cuota/Ingreso" },
   { key: "financiacion", label: "💰 Mayor financ." },
   { key: "plazo", label: "📅 Mayor plazo" },
 ];
-
+ 
 // ─── Tooltip del gráfico ─────────────────────────────────────────────────
 function ChartTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
@@ -70,7 +71,7 @@ function ChartTooltip({ active, payload, label }) {
     </div>
   );
 }
-
+ 
 export default function Monitor() {
   const [marketData, setMarketData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -79,7 +80,7 @@ export default function Monitor() {
   const [chartPeriod, setChartPeriod] = useState("todo");
   const [lastFetch, setLastFetch] = useState(null);
   const [apiError, setApiError] = useState(false);
-
+ 
   const fetchMarket = useCallback(async () => {
     try {
       const res = await fetch("/api/market-data");
@@ -93,20 +94,20 @@ export default function Monitor() {
       setLoading(false);
     }
   }, []);
-
+ 
   useEffect(() => {
     fetchMarket();
     const interval = setInterval(fetchMarket, 30 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchMarket]);
-
+ 
   // Current ratio: usa MEP — criterio bancos hipotecarios
   const currentRatio = marketData?.ratio?.mep ?? 1.33;
   const currentUVA = marketData?.uva?.valor ?? 1862;
   const currentDolar = marketData?.dolar?.oficial?.valor ?? 1400;
   const currentMEP = marketData?.dolar?.mep?.valor ?? 1400;
   const status = getRatioStatus(currentRatio);
-
+ 
   // Chart data — inject live current value
   const allChartData = [
     ...HIST.filter((d) => !d.current),
@@ -116,15 +117,22 @@ export default function Monitor() {
     chartPeriod === "5a" ? allChartData.slice(-12)
     : chartPeriod === "10a" ? allChartData.slice(-22)
     : allChartData;
-
+ 
   // Sorted banks
   const sortedBanks = [...banks].sort((a, b) => {
     if (sortBy === "tna") return a.tna - b.tna;
     if (sortBy === "financiacion") return b.financiacion - a.financiacion;
     if (sortBy === "plazo") return b.plazo - a.plazo;
+    if (sortBy === "cuota_ingreso") {
+      // Ingreso mínimo para pedir $10M = cuota / 0.25
+      // Menor ingreso requerido = más accesible → va primero
+      const ingresoA = cuotaX100k(a.tna, a.plazo) * 10 / 0.25;
+      const ingresoB = cuotaX100k(b.tna, b.plazo) * 10 / 0.25;
+      return ingresoA - ingresoB;
+    }
     return a.tna - b.tna;
   });
-
+ 
   return (
     <>
       <Head>
@@ -133,27 +141,30 @@ export default function Monitor() {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
-
+ 
       <div style={{ minHeight: "100vh", background: "#f3f4f8", fontFamily: "'Inter', -apple-system, system-ui, sans-serif", color: "#111827" }}>
-
+ 
         {/* ── HEADER ─────────────────────────────────────────────────── */}
         <header style={{ background: "#fff", borderBottom: "1px solid #e5e7eb", position: "sticky", top: 0, zIndex: 50 }}>
           <div style={{ maxWidth: 1120, margin: "0 auto", padding: "14px 20px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-
+ 
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <div style={{ width: 40, height: 40, borderRadius: 10, background: "linear-gradient(135deg, #1d4ed8 0%, #0891b2 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
                   🏠
                 </div>
                 <div>
                   <h1 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "#111827", lineHeight: 1.2 }}>Monitor Hipotecario Argentina</h1>
-                  <p style={{ margin: 0, fontSize: 11, color: "#6b7280" }}>
+                  <p style={{ margin: "1px 0 0", fontSize: 11, color: "#1d4ed8", fontStyle: "italic", fontWeight: 500 }}>
+                    by Arq. Juan Pablo Temporelli
+                  </p>
+                  <p style={{ margin: "2px 0 0", fontSize: 11, color: "#6b7280" }}>
                     Créditos UVA en tiempo real · Fuentes: BCRA + DolarAPI
                     {lastFetch && ` · ${lastFetch.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}`}
                   </p>
                 </div>
               </div>
-
+ 
               <button
                 onClick={fetchMarket}
                 disabled={loading}
@@ -162,7 +173,7 @@ export default function Monitor() {
                 {loading ? "Actualizando…" : "⟳ Actualizar"}
               </button>
             </div>
-
+ 
             {/* Tabs */}
             <div style={{ display: "flex", gap: 2, marginTop: 14, borderBottom: "2px solid #e5e7eb" }}>
               {[["creditos", "🏦 Top 10 Créditos"], ["ratio", "📈 Ratio UVA/USD (20 años)"]].map(([k, v]) => (
@@ -173,9 +184,9 @@ export default function Monitor() {
             </div>
           </div>
         </header>
-
+ 
         <main style={{ maxWidth: 1120, margin: "0 auto", padding: "24px 16px" }}>
-
+ 
           {/* ── RATIO BANNER ─────────────────────────────────────────── */}
           <div style={{ background: status.bg, border: `1.5px solid ${status.border}`, borderRadius: 14, padding: "18px 24px", marginBottom: 24, display: "flex", flexWrap: "wrap", gap: 20, alignItems: "center" }}>
             <div style={{ minWidth: 120 }}>
@@ -207,13 +218,13 @@ export default function Monitor() {
               </p>
             </div>
           </div>
-
+ 
           {apiError && (
             <div style={{ background: "#fef3c7", border: "1px solid #fcd34d", borderRadius: 8, padding: "10px 16px", marginBottom: 16, fontSize: 12, color: "#92400e" }}>
               ⚠ No se pudo conectar con las APIs externas. Mostrando datos de referencia. Los bancos recomiendan verificar condiciones directamente.
             </div>
           )}
-
+ 
           {/* ══════════════════════════════════════════════════════════ */}
           {/* TAB: CRÉDITOS                                             */}
           {/* ══════════════════════════════════════════════════════════ */}
@@ -228,7 +239,7 @@ export default function Monitor() {
                   </button>
                 ))}
               </div>
-
+ 
               {/* Bank cards */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(310px, 1fr))", gap: 16 }}>
                 {sortedBanks.map((b, idx) => {
@@ -237,12 +248,12 @@ export default function Monitor() {
                   const isTop3 = idx < 3;
                   return (
                     <div key={b.id} style={{ background: "#fff", borderRadius: 14, border: isTop3 ? `2px solid ${b.color}44` : "1px solid #e5e7eb", padding: 20, position: "relative", boxShadow: isTop ? `0 4px 20px ${b.color}22` : "none", transition: "box-shadow 0.2s" }}>
-
+ 
                       {/* Rank */}
                       <div style={{ position: "absolute", top: 16, right: 16, width: 30, height: 30, borderRadius: "50%", background: idx === 0 ? "#f59e0b" : idx === 1 ? "#9ca3af" : idx === 2 ? "#cd7c2f" : "#f3f4f6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color: idx < 3 ? "#fff" : "#6b7280" }}>
                         #{idx + 1}
                       </div>
-
+ 
                       {/* Bank */}
                       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
                         <div style={{ width: 6, height: 40, borderRadius: 3, background: b.color, flexShrink: 0 }} />
@@ -251,7 +262,7 @@ export default function Monitor() {
                           <p style={{ margin: 0, fontSize: 11, color: "#6b7280" }}>{b.destino}</p>
                         </div>
                       </div>
-
+ 
                       {/* Stats grid */}
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
                         {[
@@ -265,15 +276,25 @@ export default function Monitor() {
                           </div>
                         ))}
                       </div>
-
+ 
                       {/* Cuota estimada */}
-                      <div style={{ background: "#f0f7ff", borderRadius: 8, padding: "10px 14px", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ background: "#f0f7ff", borderRadius: 8, padding: "10px 14px", marginBottom: sortBy === "cuota_ingreso" ? 8 : 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <span style={{ fontSize: 11, color: "#6b7280" }}>Cuota inicial c/ $1M prestado</span>
                         <span style={{ fontSize: 15, fontWeight: 700, color: "#1d4ed8" }}>
                           {b.tipo === "USD" ? "USD" : "$"}{fmt(Math.round(cuota * 10))}
                         </span>
                       </div>
-
+ 
+                      {/* Ingreso mínimo — visible solo cuando se ordena por cuota/ingreso */}
+                      {sortBy === "cuota_ingreso" && (
+                        <div style={{ background: "#f0fdf4", borderRadius: 8, padding: "10px 14px", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", border: "1px solid #bbf7d0" }}>
+                          <span style={{ fontSize: 11, color: "#16a34a" }}>Ingreso mínimo c/ $10M prestados</span>
+                          <span style={{ fontSize: 15, fontWeight: 700, color: "#16a34a" }}>
+                            ${fmt(Math.round(cuota * 10 / 0.25))}
+                          </span>
+                        </div>
+                      )}
+ 
                       {/* Ventaja / Requisito */}
                       <p style={{ margin: "0 0 6px", fontSize: 12, color: "#374151" }}>
                         <span style={{ color: "#16a34a", fontWeight: 600 }}>✓ </span>{b.ventaja}
@@ -281,7 +302,7 @@ export default function Monitor() {
                       <p style={{ margin: 0, fontSize: 11, color: "#9ca3af" }}>
                         ⚑ {b.requisito_clave}
                       </p>
-
+ 
                       {/* CTA */}
                       <a href={b.url} target="_blank" rel="noopener noreferrer" style={{ display: "block", marginTop: 14, textAlign: "center", padding: "8px", background: `${b.color}14`, color: b.color, borderRadius: 8, fontSize: 12, fontWeight: 600, textDecoration: "none", border: `1px solid ${b.color}33` }}>
                         Ir al banco →
@@ -290,14 +311,14 @@ export default function Monitor() {
                   );
                 })}
               </div>
-
+ 
               <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 24, textAlign: "center" }}>
                 * Cuota inicial orientativa calculada a tasa fija. Los créditos UVA ajustan mensualmente por el índice CER (inflación).<br />
                 Datos actualizados al {banks[0]?.ultima_actualizacion}. Verificar condiciones vigentes en cada entidad antes de operar.
               </p>
             </>
           )}
-
+ 
           {/* ══════════════════════════════════════════════════════════ */}
           {/* TAB: RATIO UVA/USD                                        */}
           {/* ══════════════════════════════════════════════════════════ */}
@@ -312,7 +333,7 @@ export default function Monitor() {
                   </button>
                 ))}
               </div>
-
+ 
               {/* Chart */}
               <div style={{ background: "#fff", borderRadius: 14, padding: "24px 8px 16px 0", border: "1px solid #e5e7eb", marginBottom: 24 }}>
                 <div style={{ paddingLeft: 28, marginBottom: 16 }}>
@@ -323,7 +344,7 @@ export default function Monitor() {
                     Cuántos dólares compra una UVA. Mayor ratio = más conveniente tomar crédito UVA. Fuente: BCRA + DolarAPI.
                   </p>
                 </div>
-
+ 
                 <ResponsiveContainer width="100%" height={360}>
                   <AreaChart data={chartData} margin={{ top: 10, right: 48, left: 0, bottom: 0 }}>
                     <defs>
@@ -355,7 +376,7 @@ export default function Monitor() {
                     />
                   </AreaChart>
                 </ResponsiveContainer>
-
+ 
                 {/* Zone legend */}
                 <div style={{ display: "flex", gap: 20, paddingLeft: 28, marginTop: 14, flexWrap: "wrap" }}>
                   {[
@@ -370,7 +391,7 @@ export default function Monitor() {
                   ))}
                 </div>
               </div>
-
+ 
               {/* Historic moments */}
               <h3 style={{ fontSize: 14, fontWeight: 700, color: "#374151", marginBottom: 14 }}>6 momentos clave de los últimos 20 años</h3>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12, marginBottom: 24 }}>
@@ -389,7 +410,7 @@ export default function Monitor() {
                   </div>
                 ))}
               </div>
-
+ 
               {/* Interpretation box */}
               <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 12, padding: 20 }}>
                 <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 700, color: "#1d4ed8" }}>¿Cómo leer este ratio?</h3>
@@ -406,7 +427,7 @@ export default function Monitor() {
             </>
           )}
         </main>
-
+ 
         {/* ── FOOTER ─────────────────────────────────────────────────── */}
         <footer style={{ borderTop: "1px solid #e5e7eb", background: "#fff", marginTop: 40, padding: "20px 24px" }}>
           <div style={{ maxWidth: 1120, margin: "0 auto", display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
@@ -425,3 +446,4 @@ export default function Monitor() {
     </>
   );
 }
+
